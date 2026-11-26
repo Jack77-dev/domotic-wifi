@@ -1,0 +1,11 @@
+# Identifiants WiFi locaux (ne jamais commiter)
+wifi_config.h
+
+# Artefacts de build Arduino
+build/
+*.ino.cpp
+*.hex
+*.elf
+*.bin
+*.swp
+.DS_Store
