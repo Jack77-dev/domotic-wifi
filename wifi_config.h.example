@@ -1,9 +1,0 @@
-// Copier ce fichier en "wifi_config.h" et renseigner tes identifiants WiFi.
-// Le fichier wifi_config.h est ignore par git (voir .gitignore).
-#ifndef WIFI_CONFIG_H
-#define WIFI_CONFIG_H
-
-#define WIFI_SSID     "TON_SSID"
-#define WIFI_PASSWORD "TON_MOT_DE_PASSE"
-
-#endif
