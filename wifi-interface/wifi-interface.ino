@@ -463,7 +463,9 @@ void loop() {
     last_seconde=millis(); getLocalTime(&timeinfo);
   }
 
-  if ( timeinfo.tm_min != last_minute && timeinfo.tm_sec==0 ) {           // each  minute
+  // Detecte le changement de minute (robuste meme si le loop bloque sur un client web
+  // et saute la seconde 0 : ne PAS tester tm_sec==0 ici)
+  if ( timeinfo.tm_min != last_minute ) {           // each  minute
     last_minute=timeinfo.tm_min; 
     Serial.print("M: "); printLocalTime(); 
     time_t now = time(nullptr);                   // time sous forme de secondes
