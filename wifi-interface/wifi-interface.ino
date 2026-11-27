@@ -53,6 +53,7 @@ ported for sparkfun esp32
 #include "dictionary.h"
 #include <vector>
 #include "crontable.h"
+#include "wifi_nvs.h"   // gestion SSID/password en NVS (saisie au 1er lancement)
 ////////////////////////////////////////////////////////////
 //           SERIAL MANAGEMENT DECLARATIONS
 bool xTrace = true;                   // false will stop logging
@@ -63,9 +64,6 @@ char MySerialName[] = "WIFI";  // device name (required) for serial management
 int ledPin = RGB_BUILTIN;
 //int tx2pin = 21;
 //int rx2pin = 22;
-
-const char *ssid = "";
-const char *password = "";
 
 /* NTP server configuration */
 const char *ntpServer1 = "pool.ntp.org";
@@ -383,17 +381,16 @@ void setup() {
   digitalWrite(ledPin, HIGH);
   Serial2.begin(115200, SERIAL_8N1, 4, 5);  // And configure Serial2 on pins RX=D4, TX=D5
   MyDelay(10);
-  // We start by connecting to a WiFi network
+  // Connexion WiFi : identifiants lus en NVS, sinon saisie sur le moniteur serie
+  // puis sauvegarde en NVS si la connexion reussit (voir wifi_nvs.h)
   Serial.println(); Serial.println();
-  Serial.print("Connecting to "); Serial.println(ssid);
 
   IPAddress ip(192, 168, 1, 99);
-  WiFi.config(ip);              // url du serveur configuree a 192.198.1.99
-  WiFi.begin(ssid, password);
-
-  while (WiFi.status() != WL_CONNECTED) {
-    MyDelay(500);
-    Serial.print(".");
+  WiFi.config(ip);              // url du serveur configuree a 192.168.1.99
+  while (!wifi_nvs::connectWiFi()) {
+    Serial.println("Nouvel essai (re-saisie des identifiants)...");
+    wifi_nvs::clearCredentials();   // force la re-saisie au prochain essai
+    MyDelay(2000);
   }
 
   Serial.println("");
