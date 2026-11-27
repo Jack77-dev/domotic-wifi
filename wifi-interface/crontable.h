@@ -4,6 +4,8 @@ Module de gestion de la fonction crontable
 23/10/2026, version 1.0 : creation du module
 
 */
+extern void serial_write(String message);
+extern int ExecCommande(String commande);
 extern std::vector<String> crontable;
 int  parseCronField(const String &field, const struct tm &currentTime, int fieldIndex);
 
@@ -93,31 +95,5 @@ for (const String& zcrontab : crontable) {
         }
       } 
                        
-    }
-}
-
-void crontab_old(tm* currentTime){
-  for (const String& zcrontab : crontable) {    // parcourir la copie (crontable) memoire
-      String zz = zcrontab; zz.replace("_"," ");     // remplacer les '_' par des ' '
-      Serial.println(zz);
-      int i = zz.indexOf(";");              // zcrontab contient la ligne courante
-      if (isCronMatch(*currentTime, zz.substring(0,i))==true) {   // test crontab
-          Serial.println("Cron match ! Exécuter : "+zz.substring(i+1));
-          //int x=ExecCommande(zz.substring(i+1));      // execution commande standard format: "DEST;commande"   
-          InputCommand=zz.substring(i+1); 
-          if (InputCommand.startsWith("ZIGBEE;")) {     // traitement commande vers liason serie
-            String champ=";"+InputCommand; Serial.println(champ);
-            serial_write(champ);
-          }
-          else {
-            ExecCommande(InputCommand);
-          }
-      } 
-       
-      //if (isCronMatch(*currentTime, "*/30 * * * * ")==true) {
-      //    logLocalTime();                                                       // chaque 3 mn, logger date-time
-      //    Serial.println("Cron : logLocalTime");
-      //}
-       
     }
 }
