@@ -487,32 +487,9 @@ void loop() {
     //    CronTab
     //
 
+    // CronTab : cron_exec() parcourt et exécute les entrées (ne PAS ajouter une
+    // seconde boucle ici, sinon chaque commande cron serait exécutée 2 fois)
     cron_exec(currentTime);
-
-    for (const String& zcrontab : crontable) {    // parcourir la copie (crontable) memoire
-      String zz = zcrontab; zz.replace("_"," ");     // remplacer les '_' par des ' '
-      Serial.println(zz);
-      int i = zz.indexOf(";");              // zcrontab contient la ligne courante
-
-      if (isCronMatch(*currentTime, zz.substring(0,i))==true) {   // test crontab
-          Serial.println("Cron match ! Exécuter : "+zz.substring(i+1));
-          //int x=ExecCommande(zz.substring(i+1));      // execution commande standard format: "DEST;commande"   
-          InputCommand=zz.substring(i+1); 
-          if (InputCommand.startsWith("ZIGBEE;")) {     // traitement commande vers liason serie
-            String champ=";"+InputCommand; Serial.println(champ);
-            serial_write(champ);
-          }
-          else {
-            ExecCommande(InputCommand);
-          }
-      } 
-       
-      //if (isCronMatch(*currentTime, "*/30 * * * * ")==true) {
-      //    logLocalTime();                                                       // chaque 3 mn, logger date-time
-      //    Serial.println("Cron : logLocalTime");
-      //}
-       
-    }                       
   }
   // watchdog du réseau Serial2 (envoi un message ping tous les [DAISY_TEST_INTERVAL] secondes)
   test_daisy_chain_loop();
