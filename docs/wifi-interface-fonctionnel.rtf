@@ -55,6 +55,50 @@ Action | Effet\par
 \bullet Commandes destinées au Zigbee envoyées via \f1 serial_write()\f0  (préfixe \f1 ;\f0 )\par
 \bullet \b Watchdog\b0  : \f1 test_daisy_chain_loop()\f0  envoie un ping périodique sur Serial2 pour surveiller la liaison\par
 \par
+### 5.1 Format technique des trames Serial2 (protocole « daisy chain » de \f1 serial_management.h\f0 )\par
+\par
+Toutes les trames Serial2 suivent le format :\par
+\par
+\f1 `\f0 \par
+D;LNG;DST;SRC;COMMANDE;F\\n\par
+\f1 `\f0 \par
+\par
+Champ | Signification | Obligatoire\par
+\f1 D\f0  | Flag de début de trame | oui\par
+\f1 LNG\f0  | Longueur \b totale\b0  de la trame (préfixe \f1 D;00\f0  compris), sur 2 chiffres (3 si > 99) | oui\par
+\f1 DST\f0  | Destinataire : nom du device (ex. \f1 ZIGBEE\f0 ) ou \f1 *\f0  (broadcast) | oui\par
+\f1 SRC\f0  | Émetteur : \f1 MySerialName\f0  (ex. \f1 WIFI\f0 ) | oui\par
+\f1 COMMANDE\f0  | Payload texte (ex. \f1 DISPLAY*Hello\f0 ) | oui\par
+\f1 F\f0  | Flag de fin de trame (dernier caractère avant \f1 \\n\f0 ) | oui\par
+\par
+\bullet Séparateur entre champs : \f1 ;\f0 \par
+\bullet Fin de ligne : \f1 \\n\f0  (les caractères non imprimables sont filtrés à la réception)\par
+\par
+\b Exemple\b0  — envoi de \f1 ;ZIGBEE;DISPLAY*Hello\f0  depuis le module \f1 WIFI\f0  :\par
+\f1 `\f0 \par
+D;28;ZIGBEE;WIFI;DISPLAY*Hello;F\\n\par
+\f1 `\f0 \par
+\par
+### 5.2 Émission (\f1 serial_write\f0 )\par
+\par
+Entrée : \f1 ;DST;COMMANDE\f0  (le \f1 ;\f0  initial est le séparateur). La fonction construit la trame complète avec \f1 SRC = MySerialName\f0 , calcule \f1 LNG\f0 , ajoute \f1 D\f0 …\f1 F\\n\f0 , et l'envoie sur Serial2.\par
+\par
+### 5.3 Réception (\f1 serial_read\f0  / \f1 input_read\f0 )\par
+\par
+1. Lecture jusqu'à \f1 \\n\f0 , filtrage des caractères non imprimables\par
+2. \b Anti-saturation\b0  : le même message reçu plus de 10 fois en moins d'1 s est ignoré\par
+3. \b Validations\b0  : longueur ? 6, dernier caractère = \f1 F\f0 , longueur lue == \f1 LNG\f0 , champs correctement séparés — sinon trame ignorée\par
+4. \b Mode anneau (ring, \f1 TEST_MODE = true\f0 )\b0  :\par
+   - \f1 SRC == MySerialName\f0  ? c'est notre propre message qui a fait le tour : il est absorbé (code retour \f1 -99\f0 )\par
+   - \f1 DST\f0  ? nous et ? \f1 *\f0  ? trame \b re-propagée\b0  sur Serial2\par
+   - \f1 DST\f0  = nous ou \f1 *\f0  ? extraction du payload \f1 SRC;COMMANDE\f0  remis à l'application\par
+\par
+### 5.4 Watchdog de la liaison (daisy chain)\par
+\par
+\bullet Toutes les \b 15 s\b0  (\f1 DAISY_TEST_INTERVAL\f0 ), envoi d'un ping : \f1 ;WIFI;PING_<millis>\f0  encapsulé dans une trame complète\par
+\bullet Si le ping ne revient pas dans les \b 2 s\b0  ? \f1 Timeout ! La boucle est probablement coupée\f0 \par
+\bullet Si le ping revient ? calcul du \b round-trip time\b0  et log \f1 Boucle intègre\f0 \par
+\par
 \f2\fs28\b 6. Crontab (programmation horaire)\b0\fs24\par
 \par
 \bullet Stockée en \b NVS\b0  (namespace \f1 crontab\f0 ) via \f1 crontable.h\f0  / \f1 dictionary.h\f0 \par

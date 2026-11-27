@@ -56,6 +56,51 @@ Les commandes reçues (web, port série USB `Serial`, ou `Serial2`) ont le forma
 - Commandes destinées au Zigbee envoyées via `serial_write()` (préfixe `;`)
 - **Watchdog** : `test_daisy_chain_loop()` envoie un ping périodique sur Serial2 pour surveiller la liaison
 
+### 5.1 Format technique des trames Serial2 (protocole « daisy chain » de `serial_management.h`)
+
+Toutes les trames Serial2 suivent le format :
+
+```
+D;LNG;DST;SRC;COMMANDE;F\n
+```
+
+| Champ | Signification | Obligatoire |
+|---|---|---|
+| `D` | Flag de début de trame | oui |
+| `LNG` | Longueur **totale** de la trame (préfixe `D;00` compris), sur 2 chiffres (3 si > 99) | oui |
+| `DST` | Destinataire : nom du device (ex. `ZIGBEE`) ou `*` (broadcast) | oui |
+| `SRC` | Émetteur : `MySerialName` (ex. `WIFI`) | oui |
+| `COMMANDE` | Payload texte (ex. `DISPLAY*Hello`) | oui |
+| `F` | Flag de fin de trame (dernier caractère avant `\n`) | oui |
+
+- Séparateur entre champs : `;`
+- Fin de ligne : `\n` (les caractères non imprimables sont filtrés à la réception)
+
+**Exemple** — envoi de `;ZIGBEE;DISPLAY*Hello` depuis le module `WIFI` :
+```
+D;28;ZIGBEE;WIFI;DISPLAY*Hello;F\n
+```
+
+### 5.2 Émission (`serial_write`)
+
+Entrée : `;DST;COMMANDE` (le `;` initial est le séparateur). La fonction construit la trame complète avec `SRC = MySerialName`, calcule `LNG`, ajoute `D`…`F\n`, et l'envoie sur Serial2.
+
+### 5.3 Réception (`serial_read` / `input_read`)
+
+1. Lecture jusqu'à `\n`, filtrage des caractères non imprimables
+2. **Anti-saturation** : le même message reçu plus de 10 fois en moins d'1 s est ignoré
+3. **Validations** : longueur ≥ 6, dernier caractère = `F`, longueur lue == `LNG`, champs correctement séparés — sinon trame ignorée
+4. **Mode anneau (ring, `TEST_MODE = true`)** :
+   - `SRC == MySerialName` → c'est notre propre message qui a fait le tour : il est absorbé (code retour `-99`)
+   - `DST` ≠ nous et ≠ `*` → trame **re-propagée** sur Serial2
+   - `DST` = nous ou `*` → extraction du payload `SRC;COMMANDE` remis à l'application
+
+### 5.4 Watchdog de la liaison (daisy chain)
+
+- Toutes les **15 s** (`DAISY_TEST_INTERVAL`), envoi d'un ping : `;WIFI;PING_<millis>` encapsulé dans une trame complète
+- Si le ping ne revient pas dans les **2 s** → `Timeout ! La boucle est probablement coupée`
+- Si le ping revient → calcul du **round-trip time** et log `Boucle intègre`
+
 ## 6. Crontab (programmation horaire)
 
 - Stockée en **NVS** (namespace `crontab`) via `crontable.h` / `dictionary.h`
