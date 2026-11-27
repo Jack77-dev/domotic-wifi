@@ -290,83 +290,69 @@ void purgeZone_Message(){
   }
 
 int  ExecCommande(String commande) {         // DECODAGE ET EXECUTION DES COMMANDES STANDARDS format: "EMET;commande"
-  Serial.println("ExecCommande: "+commande);
-  
-  // On convertit temporairement le String en char* pour travailler proprement
+  // Parsing sans allocation heap : on travaille directement sur le buffer char*
   const char* cmd_ptr = commande.c_str();
-  
-  // On cherche le premier point-virgule
   const char* sep_ptr = strchr(cmd_ptr, ';');
-  String SRC=""; String action=""; int i;
-
-  if (sep_ptr != nullptr) {
-    // Calcul de la longueur de SRC (tout ce qui est avant le ';')
-    int src_len = sep_ptr - cmd_ptr;
-    
-    // Extraction de SRC (soit via String, soit directement)
-    SRC = commande.substring(0, src_len);
-    
-    // Extraction de l'action : tout ce qui est après le ';' jusqu'à la fin !
-    action = String(sep_ptr + 1); 
-    
-    Serial.printf("SRC extrait : %s\n", SRC.c_str());
-    Serial.print("Action extraite : "); Serial.println(action);
-  } else {
-    Serial.println("Erreur : Aucun séparateur ';' trouvé dans la commande.");
+  if (sep_ptr == nullptr) {
+    if (Trace==1) Serial.println(F("Erreur : pas de ';' dans la commande"));
+    return(0);
+  }
+  size_t src_len = sep_ptr - cmd_ptr;
+  const char* action = sep_ptr + 1;           // action = tout ce qui suit le ';'
+  if (Trace==1) {
+    Serial.print(F("ExecCommande: ")); Serial.println(commande);
+    Serial.printf("Source: %.*s, Action: %s\n", (int)src_len, cmd_ptr, action);
   }
 
-  /* char sep=';'; String SRC=""; String action=""; int i;
-  i=commande.indexOf(sep);
-  if (i>0){
-    SRC=commande.substring(0,i);
-    Serial.printf("longueur: %d\n",commande.length());
-    action=commande.substring(i+1, commande.length()-i);
-  }
-  */
-  Serial.printf("Source: %s, Action: %s\n", SRC.c_str(), action.c_str());
-  /////////// fonction du module WIFI //////////////////////////////////////
-  if (action.startsWith("REBOOT*")) {          // reboot device
-    Serial.println("Rebooting..."); MyDelay(1000);
+  /////////// fonctions du module WIFI //////////////////////////////////////
+  if (strncmp(action, "REBOOT*", 7) == 0) {          // reboot device
+    Serial.println(F("Rebooting...")); MyDelay(1000);
     ESP.restart();
   }
-  else if (action.startsWith("SETTIME*")) {          // set system time on Device
-    secondes=action.substring(8).toDouble(); settime_secondes=millis()/1000;
-    timeinfo=*localtime(&secondes); Serial.println(&timeinfo, "settime: %A, %d %B %Y %H:%M:%S");
+  else if (strncmp(action, "SETTIME*", 8) == 0) {    // set system time on Device
+    secondes = (time_t)strtod(action + 8, nullptr);   // pas de substring().toDouble()
+    settime_secondes = millis()/1000;
+    timeinfo = *localtime(&secondes);
+    if (Trace==1) Serial.println(&timeinfo, "settime: %A, %d %B %Y %H:%M:%S");
   }
-  else if (action.startsWith("DISPLAY*")) {          // display inf par ajout ligne texte dans zone_message
-    zone_message = action.substring(8)+"<br>"+zone_message;   //ajout message en tete de zone
+  else if (strncmp(action, "DISPLAY*", 8) == 0) {    // ajout message en tete de zone_message
+    const char* msg = action + 8;
+    zone_message.reserve(strlen(msg) + 4 + zone_message.length());  // 1 seule reallocation
+    zone_message = String(msg) + "<br>" + zone_message;
     purgeZone_Message();    // limiter longueur de zone_message
   }
-  else if (action.startsWith("GETTIME*")) {          // ask system time
+  else if (strncmp(action, "GETTIME*", 8) == 0) {    // ask system time -> reponse via serial2
     if (getLocalTime(&timeinfo)) {
-      String texte; texte.reserve(64); 
-      char r[9]; dtostrf(time(&secondes),8,0,r);
-      texte=';'; texte+=SRC;  texte+=";SETTIME*"; texte += r;
-      Serial.println(texte);
-      serial_write(texte);      // retourner heure au demandeur via uart serie
+      char texte[80];                                  // buffer statique, pas de String
+      time_t now = time(nullptr);
+      snprintf(texte, sizeof(texte), ";%.*s;SETTIME*%ld", (int)src_len, cmd_ptr, (long)now);
+      if (Trace==1) Serial.println(texte);
+      serial_write(String(texte));
     }
   }
-  else if (action.startsWith("DSPTIME*")) { logLocalTime(); }    // display time on monitor
+  else if (strncmp(action, "DSPTIME*", 8) == 0) { logLocalTime(); }    // display time on monitor
   //
-  else if (action.startsWith("CRON")) {                           // Action type Crontab
+  else if (strncmp(action, "CRON", 4) == 0) {        // commandes Crontab (NVS)
     crontab.begin();
-    if (action.startsWith("CRONLIST*")) { listNvsKeys("crontab"); }
-    else if (action.startsWith("CRONADD*")) {                     // Ajout/modification une Entree, format CRONADD*KEY/crontabEntry
-      String crontab_entry = action.substring(8);
-      i=crontab_entry.indexOf("/");
-      if (i>0){
-        String EntryKey=crontab_entry.substring(0,i);
-        String Entry=crontab_entry.substring(i+1);
-        crontab.putKey(EntryKey.c_str(), Entry.c_str());
+    if (strncmp(action, "CRONLIST*", 9) == 0) { listNvsKeys("crontab"); }
+    else if (strncmp(action, "CRONADD*", 8) == 0) {  // format CRONADD*KEY/entry
+      const char* entry = action + 8;
+      const char* slash = strchr(entry, '/');
+      if (slash != nullptr) {
+        char key[32];
+        size_t kl = slash - entry;
+        if (kl >= sizeof(key)) kl = sizeof(key) - 1;
+        memcpy(key, entry, kl); key[kl] = '\0';
+        crontab.putKey(key, slash + 1);
       }
     }
-    else if (action.startsWith("CRONDEL*")) {                     // Suppression une Entree, format CRONDEL*EntryKey
-      String EntryKey = action.substring(8); crontab.deleteKey(EntryKey.c_str());
+    else if (strncmp(action, "CRONDEL*", 8) == 0) {   // format CRONDEL*KEY
+      crontab.deleteKey(action + 8);
     }
     crontab.end();
   }
   else {
-    Serial.println("Invalid Commande : "+commande);
+    if (Trace==1) { Serial.print(F("Invalid Commande : ")); Serial.println(commande); }
   }
   return(1);
   }
