@@ -1,0 +1,76 @@
+{\rtf1\ansi\ansicpg1252\deff0{\fonttbl{\f0\fswiss Consolas;}{\f1\fmodern Courier New;}{\f2\fswiss Arial;}}
+\f2\fs36\b Documentation fonctionnelle — wifi-interface (ESP32-C6 WiFi)\b0\fs24\par
+\par
+Version du firmware : \b V1.7 du 22/10/2026\b0  (+ intégration NVS WiFi)\par
+\par
+\f2\fs28\b 1. Rôle du module\b0\fs24\par
+\par
+L'ESP32-C6 WiFi est l'\b interface homme-machine web\b0  du projet domotique :\par
+\bullet il héberge un \b serveur web HTTP\b0  (port 80) accessible depuis le réseau local ;\par
+\bullet il communique avec l'autre ESP32-C6 (gateway \b Zigbee\b0 ) via la liaison \b Serial2\b0  ;\par
+\bullet il gère l'\b horloge\b0  (NTP) et une \b crontab\b0  d'actions programmées.\par
+\par
+\f2\fs28\b 2. Connexion WiFi (wifi_nvs.h)\b0\fs24\par
+\par
+Situation | Comportement\par
+Premier lancement (NVS vide) | Saisie de \f1 SSID\f0  puis \f1 Mot de passe\f0  sur le moniteur série (115200 bauds)\par
+Connexion réussie | Identifiants \b sauvegardés en NVS\b0  (namespace \f1 wifi\f0 , clés \f1 ssid\f0  / \f1 pass\f0 )\par
+Lancements suivants | Reconnexion \b automatique\b0  depuis la NVS, aucune saisie\par
+Échec de connexion | NVS effacée (\f1 clearCredentials\f0 ) ? re-saisie au tour suivant\par
+\par
+\bullet IP fixe configurée : \b 192.168.1.99\b0  (\f1 WiFi.config\f0 )\par
+\bullet Timeout de connexion : 15 s\par
+\par
+\f2\fs28\b 3. Serveur web (port 80)\b0\fs24\par
+\par
+Page d'accueil servie à chaque connexion client :\par
+\par
+\bullet \b Lien « H »\b0  (\f1 GET /H\f0 ) : allume la LED builtin (\f1 RGB_BUILTIN\f0 )\par
+\bullet \b Lien « L »\b0  (\f1 GET /L\f0 ) : éteint la LED builtin\par
+\bullet \b Lien « Trace »\b0  (\f1 GET /Trace\f0 ) : bascule le mode trace (logs série détaillés)\par
+\bullet \b Formulaire de commande\b0  (\f1 GET /submit-data?command=...\f0 ) : envoie une commande au format \f1 SRC;ACTION\f0 \par
+  - si la commande commence par \f1 >>\f0  : envoyée telle quelle sur \b Serial2\b0  (préfixe \f1 ;\f0 )\par
+  - sinon : exécutée localement via \f1 ExecCommande()\f0 \par
+\bullet \b Zone « Messages système »\b0  : affiche les derniers messages (\f1 zone_message\f0 , tronquée à 2000 caractères)\par
+\par
+\f2\fs28\b 4. Moteur de commandes \f1 SRC;ACTION\f0 \b0\fs24\par
+\par
+Les commandes reçues (web, port série USB \f1 Serial\f0 , ou \f1 Serial2\f0 ) ont le format \f1 SOURCE;ACTION\f0  et sont traitées par \f1 ExecCommande()\f0  :\par
+\par
+Action | Effet\par
+\f1 REBOOT*\f0  | Redémarre l'ESP32 (\f1 ESP.restart()\f0 )\par
+\f1 SETTIME*<epoch>\f0  | Règle l'horloge système\par
+\f1 GETTIME*\f0  | Renvoie l'heure courante au demandeur via Serial2 (\f1 ;SRC;SETTIME*<epoch>\f0 )\par
+\f1 DISPLAY*<texte>\f0  | Ajoute un message en tête de la zone « Messages système » de la page web\par
+\f1 DSPTIME*\f0  | Logue l'heure locale sur le moniteur série\par
+\f1 CRONLIST*\f0  | Liste les entrées de la crontab (NVS)\par
+\f1 CRONADD*<clé>/<entry>\f0  | Ajoute/modifie une entrée crontab\par
+\f1 CRONDEL*<clé>\f0  | Supprime une entrée crontab\par
+\par
+\f2\fs28\b 5. Liaison série avec le gateway Zigbee\b0\fs24\par
+\par
+\bullet \b Serial2\b0  : \f1 RX = GPIO4 (D4)\f0 , \f1 TX = GPIO5 (D5)\f0 , 115200 bauds, 8N1\par
+\bullet Câblage croisé avec l'autre ESP32-C6 + \b GND commun\b0 \par
+\bullet Trames reçues au format \f1 SRC;ACTION\f0  ? exécutées localement\par
+\bullet Commandes destinées au Zigbee envoyées via \f1 serial_write()\f0  (préfixe \f1 ;\f0 )\par
+\bullet \b Watchdog\b0  : \f1 test_daisy_chain_loop()\f0  envoie un ping périodique sur Serial2 pour surveiller la liaison\par
+\par
+\f2\fs28\b 6. Crontab (programmation horaire)\b0\fs24\par
+\par
+\bullet Stockée en \b NVS\b0  (namespace \f1 crontab\f0 ) via \f1 crontable.h\f0  / \f1 dictionary.h\f0 \par
+\bullet Format d'une entrée : \f1 <expression cron> ;<commande>\f0 \par
+  ex. \f1 */5 * * * * ;WIFI;DISPLAY*Ping toutes les 5 min\f0 \par
+\bullet Évaluée \b chaque minute\b0  (quand \f1 tm_sec == 0\f0 )\par
+\bullet Si la commande de l'entrée commence par \f1 ZIGBEE;\f0  ? envoyée sur Serial2, sinon exécutée localement\par
+\par
+\f2\fs28\b 7. Horloge (NTP)\b0\fs24\par
+\par
+\bullet Serveurs : \f1 pool.ntp.org\f0 , \f1 time.nist.gov\f0 \par
+\bullet Fuseau : \f1 CET-1CEST,M3.5.0/2,M10.5.0/3\f0  (heure d'été gérée)\par
+\par
+\f2\fs28\b 8. Ports série\b0\fs24\par
+\par
+Port | Broches | Usage\par
+\f1 Serial\f0  (USB) | USB | Moniteur série, logs, saisie WiFi au 1er lancement, commandes \f1 SRC;ACTION\f0 \par
+\f1 Serial2\f0  | RX=D4, TX=D5 | Liaison avec le gateway Zigbee\par
+}
